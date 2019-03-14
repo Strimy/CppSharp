@@ -199,7 +199,19 @@ namespace CppSharp.Generators.CSharp
             TypeQualifiers quals)
         {
             if (MarshalKind == MarshalKind.NativeField && !pointer.Pointee.IsEnumType())
+            {
+                if(pointer.GetFinalPointee().IsClass())
+                {
+                    var result = pointer.QualifiedPointee.Visit(this);
+                    if (ContextKind == TypePrinterContextKind.Native)
+                    {
+                        result += "*";
+                    }
+                    return result;
+                }
+
                 return IntPtrType;
+            }
 
             if (pointer.Pointee is FunctionType)
                 return pointer.Pointee.Visit(this, quals);
@@ -271,10 +283,16 @@ namespace CppSharp.Generators.CSharp
             if ((pointee.IsDependent || pointee.TryGetClass(out @class))
                 && ContextKind == TypePrinterContextKind.Native)
             {
-                return IntPtrType;
+                var result = pointer.QualifiedPointee.Visit(this) + "*";
+                return result;
+            }
+            var ret = pointer.QualifiedPointee.Visit(this);
+            if (ContextKind == TypePrinterContextKind.Native)
+            {
+                ret += "*";
             }
 
-            return pointer.QualifiedPointee.Visit(this);
+            return ret;
         }
 
         public override TypePrinterResult VisitMemberPointerType(MemberPointerType member,
@@ -607,6 +625,11 @@ namespace CppSharp.Generators.CSharp
 
             Parameter = parameter;
             var ret = paramType.Visit(this);
+            if (Parameter.IsOut)
+            {
+                ret.Type = "out " + ret.Type.Substring(0, ret.Type.Length - 1);
+            }
+
             Parameter = null;
 
             return ret;

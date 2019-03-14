@@ -2865,6 +2865,11 @@ namespace CppSharp.Generators.CSharp
             }
             WriteLine("{0}({1});", functionName, string.Join(", ", names));
 
+            foreach(var item in @params.Where(o => o.Param.IsOut && o.Param.Type.GetFinalPointee().IsClass()))
+            {
+                WriteLine($"{item.Param.Name} = {item.Param.QualifiedType.Visit(TypePrinter)}.__CreateInstance((IntPtr){item.Name});");
+            }
+
             foreach (TextGenerator cleanup in from p in @params
                                               select p.Context.Cleanup)
                 Write(cleanup);
@@ -2985,8 +2990,10 @@ namespace CppSharp.Generators.CSharp
             var argName = Generator.GeneratedIdentifier("arg") + paramIndex.ToString(CultureInfo.InvariantCulture);
             var paramMarshal = new ParamMarshal { Name = argName, Param = param };
 
-            if (param.IsOut || param.IsInOut)
+            if (param.IsInOut)
             {
+                TypePrinter.PushContext(TypePrinterContextKind.Native);
+
                 var paramType = param.Type;
 
                 Class @class;
@@ -2995,6 +3002,17 @@ namespace CppSharp.Generators.CSharp
                     var qualifiedIdentifier = (@class.OriginalClass ?? @class).Visit(TypePrinter);
                     WriteLine("{0} = new {1}();", name, qualifiedIdentifier);
                 }
+                TypePrinter.PopContext();
+
+            }
+            else if(param.IsOut && param.Type.GetFinalPointee().IsClass())
+            {
+                TypePrinter.PushContext(TypePrinterContextKind.Native);
+                var paramType = param.Type;
+
+                var qualifiedIdentifier = paramType.GetPointee().Visit(TypePrinter);
+                WriteLine("{1} {0};", paramMarshal.Name, qualifiedIdentifier);
+                TypePrinter.PopContext();
             }
 
             var ctx = new CSharpMarshalContext(Context, CurrentIndentation)
@@ -3010,7 +3028,7 @@ namespace CppSharp.Generators.CSharp
             param.QualifiedType.Visit(marshal);
             paramMarshal.HasUsingBlock = ctx.HasCodeBlock;
 
-            if (string.IsNullOrEmpty(marshal.Context.Return))
+            if (string.IsNullOrEmpty(marshal.Context.Return) && !param.IsOut)
                 throw new Exception("Cannot marshal argument of function");
 
             if (!string.IsNullOrWhiteSpace(marshal.Context.Before))
@@ -3021,7 +3039,7 @@ namespace CppSharp.Generators.CSharp
 
             if (marshal.Context.Return.ToString() == param.Name)
                 paramMarshal.Name = param.Name;
-            else
+            else if(!string.IsNullOrEmpty(marshal.Context.Return))
                 WriteLine("var {0} = {1};", argName, marshal.Context.Return);
 
             param.Name = name;
